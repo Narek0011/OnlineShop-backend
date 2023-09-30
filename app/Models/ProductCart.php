@@ -9,7 +9,7 @@ class ProductCart extends Model
 {
     use HasFactory;
     protected $fillable = [
-        'total_count',
+        'total_amount',
         'product_id',
         'color_id',
         'count',

@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProductController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -19,17 +18,18 @@ use Illuminate\Support\Facades\Route;
 Route::group(['middleware' => 'jwt.auth'], function ($router) {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('user', [AuthController::class, 'getUser']);
-
 });
+
 Route::post('/signup', [AuthController::class, 'signup']);
 Route::post('/login', [AuthController::class, 'login']);
 
-
-Route::apiResources([
-    'products' => ProductController::class,
-]);
+Route::apiResources(['products' => ProductController::class,]);
 
 Route::post('/addProductToCart', [ProductController::class, 'addProductToCart']);
 Route::get('/getProductsToCart/{id}', [ProductController::class, 'getProductsToCart']);
 Route::delete('/deleteProductsToCart/{id}', [ProductController::class, 'deleteProductsToCart']);
 Route::put('/updateProductToCart', [ProductController::class, 'updateProductToCart']);
+
+
+
+Route::post('/checkout', [ProductController::class, 'checkout']);

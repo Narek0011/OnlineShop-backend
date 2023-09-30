@@ -19,7 +19,7 @@ return new class extends Migration
             $table->unsignedBigInteger('color_id');
             $table->unsignedBigInteger('user_id');
             $table->integer('count');
-            $table->integer('total_count');
+            $table->integer('total_amount');
             $table->timestamps();
 
             $table->foreign('product_id')

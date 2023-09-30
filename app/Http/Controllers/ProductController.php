@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProductCartRequest;
-use App\Http\Requests\ProductRequest;
 use App\Http\Resources\CartResource;
 use App\Http\Resources\ColorResource;
 use App\Http\Resources\ProductResource;
@@ -12,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductCart;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ProductController extends Controller
 {
@@ -36,7 +35,7 @@ class ProductController extends Controller
             return [
                 'data' => ProductResource::collection($product->get()),
                 'pagination' => [
-                    'cars_pages' => ceil($count / $take),
+                    'product_pages' => ceil($count / $take),
                     'count' => $count,
                 ],
                 'status' => true
@@ -53,7 +52,7 @@ class ProductController extends Controller
 
     /**
      * @param $id
-     * @return void
+     * @return JsonResponse
      */
     public function show($id)
     {
@@ -79,7 +78,7 @@ class ProductController extends Controller
     {
         try {
             $carts = ProductCart::orderBy('id', "desc")->where('user_id', $id);
-            $allCarts = $carts->select('id', 'product_id', 'color_id', 'count', 'total_count')->get();
+            $allCarts = $carts->select('id', 'product_id', 'color_id', 'count', 'total_amount')->get();
             return response()->json([
                 'data' => CartResource::collection($allCarts),
                 'status' => true
@@ -109,21 +108,23 @@ class ProductController extends Controller
             $color = new ColorResource(Colors::find($color_id));
             $totalPrice = $product['price'] * $count;
 
+            $existingProduct = ProductCart::where('product_id', $product_id)
+                ->where('user_id', $user_id)
+                ->first();
 
-            ProductCart::updateOrCreate(
-                [
-                    'product_id' => $product_id,
-                    'color_id' => $color_id,
-                    'user_id' => $user_id,
-                ],
-                [
+            if ($existingProduct) {
+                $existingProduct->count += $count;
+                $existingProduct->total_amount += $totalPrice;
+                $existingProduct->save();
+            } else {
+                ProductCart::create([
                     'product_id' => $product_id,
                     'color_id' => $color_id,
                     'count' => $count,
                     'user_id' => $user_id,
-                    'total_count' => $totalPrice,
-                ]
-            );
+                    'total_amount' => $totalPrice,
+                ]);
+            }
 
             return response()->json([
                 'count' => $count,
@@ -141,6 +142,50 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+//    public function addProductToCart(Request $request)
+//    {
+//        try {
+//            $requestData = $request->all();
+//            $data = $requestData['data'];
+//            $product_id = $data['product_id'];
+//            $color_id = $data['color_id'];
+//            $count = $data['count'];
+//            $user_id = $data['user_id'];
+//            $product = new ProductResource(Product::find($product_id));
+//            $color = new ColorResource(Colors::find($color_id));
+//            $totalPrice = $product['price'] * $count;
+//
+//            ProductCart::updateOrCreate(
+//                [
+//                    'product_id' => $product_id,
+//                    'user_id' => $user_id,
+//                ],
+//                [
+//                    'product_id' => $product_id,
+//                    'color_id' => $color_id,
+//                    'count' => $count,
+//                    'user_id' => $user_id,
+//                    'total_amount' => $totalPrice,
+//                ]
+//            );
+//
+//            return response()->json([
+//                'count' => $count,
+//                'user_id' => $user_id,
+//                'product' => $product,
+//                'color' => $color,
+//                'total_price' => $totalPrice,
+//                'status' => true
+//            ], 200);
+//
+//        } catch (\Exception $e) {
+//            return response()->json([
+//                'messages' => $e->getMessage(),
+//                'status' => false
+//            ], 500);
+//        }
+//    }
 
     /**
      * @param $id
@@ -177,7 +222,7 @@ class ProductController extends Controller
             $productId = $updatedProduct['product_id'];
             $product = Product::findOrFail($productId);
             $newTotalPrice = $product['price'] * $newCount;
-            $updatedProduct->update(['count' => $newCount, 'total_count' => $newTotalPrice]);
+            $updatedProduct->update(['count' => $newCount, 'total_amount' => $newTotalPrice]);
             $product = new ProductResource(Product::find($productId));
             $color = new ColorResource(Colors::find($updatedProduct['color_id']));
 
@@ -186,7 +231,7 @@ class ProductController extends Controller
                 'id' => $id,
                 'color' => $color,
                 'count' => +$updatedProduct['count'],
-                'total_price' => $updatedProduct['total_count'],
+                'total_price' => $updatedProduct['total_amount'],
                 'message' => 'Your product updated',
                 'status' => true,
             ], 200);
@@ -196,6 +241,67 @@ class ProductController extends Controller
                 'status' => false
             ], 500);
         }
+    }
 
+    /**
+     * @return JsonResponse|void
+     * @throws \Stripe\Exception\ApiErrorException
+     */
+    public function checkout()
+    {
+        $user_id = Auth::user()->id;
+        $total_amount = $this->getTotalPrice($user_id);
+        $quantity = $this->getProductsQuantity($user_id);
+        $stripe = new \Stripe\StripeClient(env('STRIPE_SECRET'));
+        $checkout_session = $stripe->checkout->sessions->create([
+            'line_items' => [[
+                'price_data' => [
+                    'currency' => 'usd',
+                    'product_data' => [
+                        'name' => 'T-shirt',
+                    ],
+                    'unit_amount' => $total_amount,
+                ],
+                'quantity' => $quantity,
+            ]],
+            'mode' => 'payment',
+            'success_url' => 'http://localhost:3000/success',
+            'cancel_url' => 'http://localhost:3000/cancel',
+        ]);
+
+        ProductCart::where('user_id', $user_id)->delete();
+
+        return response()->json([
+            'status' => true,
+            'redirect_url' => $checkout_session->url
+        ],200);
+    }
+
+    /**
+     * @param $user_id
+     * @return int
+     */
+    public function getTotalPrice($user_id)
+    {
+        $products = ProductCart::where('user_id', $user_id)->get();
+        $total_amount = 0;
+        foreach ($products as $product) {
+            $total_amount += $product->total_amount;
+        }
+        return $total_amount;
+    }
+
+    /**
+     * @param $user_id
+     * @return int
+     */
+    public function getProductsQuantity($user_id)
+    {
+        $products = ProductCart::where('user_id', $user_id)->get();
+        $quantity = 0;
+        foreach ($products as $product) {
+            $quantity += $product->count;
+        }
+        return $quantity;
     }
 }

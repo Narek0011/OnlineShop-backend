@@ -11,7 +11,7 @@ use JsonSerializable;
  * @property mixed products
  * @property mixed color
  * @property mixed count
- * @property mixed total_count
+ * @property mixed total_amount
  */
 class ProductCartResource extends JsonResource
 {
@@ -27,7 +27,7 @@ class ProductCartResource extends JsonResource
             'product' => ProductResource::collection($this->products),
             'color' => ColorResource::collection($this->color),
             'count' => $this->count,
-            'total_count' => $this->total_count,
+            'total_amount' => $this->total_amount,
         ];
     }
 }
